@@ -136,7 +136,7 @@ def parse_file_gnmap(file_path):
         return ()
 
 
-# Parse string from CLI arguments: ip, range, file.
+# Parse string from CLI arguments: ip/range/file.
 # Returns [(ip, port)]
 def parse_target(target, port=5432):
     try:
