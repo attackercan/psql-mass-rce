@@ -1,3 +1,5 @@
+#/usr/bin/env python3
+
 import argparse
 import psycopg2
 import re
@@ -63,6 +65,7 @@ class Victim:
 
     def do_rce_v8(self, command):
         return 'RCE v8 is not implemented yet'
+
 
 # Make PSQL query
 # Returns {'status': '', 'message': ''}
@@ -172,6 +175,7 @@ def main():
                     else:
                         command = 'ipconfig && whoami /priv'
                 victim.do_rce(command)
+
 
 if __name__ == '__main__':
     main()
