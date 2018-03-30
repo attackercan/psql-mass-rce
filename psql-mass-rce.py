@@ -142,14 +142,18 @@ def parse_target(target, port):
     try:
         return map(lambda arg: (str(arg), port), list(IPGlob(target)))  # IP/range to [(host,port)]
     except:
-        try:
-            return map(lambda arg: (str(arg), port), list(IPNetwork(target)))  # IP/range to [(host,port)]
-        except:
-            try:
-                return parse_file_gnmap(target)  # local gnmap file
-            except:
-                print("Target is not IP or a Network. Try to re-set latest(s) bit, e.g. 8.8.0.0/16")
-                exit()
+        pass
+
+    try:
+        return map(lambda arg: (str(arg), port), list(IPNetwork(target)))  # IP/range to [(host,port)]
+    except:
+        pass
+
+    try:
+        return parse_file_gnmap(target)  # local gnmap file
+    except:
+        print("Target is not IP or a Network. Try to re-set latest(s) bit, e.g. 8.8.0.0/16")
+        exit()
 
 
 def attack_victim(ip, port, userlist, passlist, command):
