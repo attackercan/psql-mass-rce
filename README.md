@@ -3,7 +3,7 @@ Conviniently invoke RCE on PostgreSQL servers in network
 
 How does it work?
 --------
-Few examples to give you an idea (any number of any targets are supported):   
+Few examples to give you an idea (any number of any targets is supported):   
 `./psql-mass-rce.py 192.168.0.100-150 ./test.gnmap --port 5433`   
 `./psql-mass-rce.py 192.168.0.100/31 10.10.10.10 --passfile rockyou.txt`    
 
