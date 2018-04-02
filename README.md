@@ -8,7 +8,7 @@ Few examples to give you an idea:
 | Example | Comment |
 |---------|---------|
 | `./psql-mass-rce.py 10.1.1.10 192.168.0.100-150 --port 5433` | Accepts any number of any targets |
-| `./psql-mass-rce.py 10.1.1.100/31 ./psql.gnmap --passfile rockyou.txt` | Accepts IP subnets and .gnmap files |
+| `./psql-mass-rce.py 10.1.1.1/30 ./psql.gnmap --passfile rockyou.txt` | Accepts IP subnets and .gnmap files |
 | `./psql-mass-rce.py -iL ./targets.txt --userfile users.txt` | Load IP[:port] from local file (nmap-alike) |
 
 
