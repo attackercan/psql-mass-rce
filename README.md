@@ -51,14 +51,16 @@ Full help:
 ```
 psql-mass-rce v0.1
 
-Usage: psql-mass-rce.py targets [--userfile USERFILE] [--passfile PASSFILE]
-               [--command COMMAND] [--port PORT] [--saved]
+Usage: psql-mass-rce.py targets [-iL TARGETS_FILE] [--userfile USERFILE]
+               [--passfile PASSFILE] [--command COMMAND] [--port PORT]
+               [--saved]
 
 Necessary arguments:
-  targets              Accepts any number of these: IP, network, or .gnmap file
+  targets              Accepts any number of these: IP, subnet, or .gnmap file
 
 Optional arguments:
   -h, --help           show this help message and exit
+  -iL TARGETS_FILE     Load IP[:port] targets from local file
   --userfile USERFILE  File with a list of users
   --passfile PASSFILE  File with a list of passwords
   --command COMMAND    Command to execute on a target machine
