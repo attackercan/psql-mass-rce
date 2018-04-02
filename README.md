@@ -17,25 +17,11 @@ Scripts does the following:
 Live hosts with good credentials are saved to session file. After reconnaissance you may want to run RCE on those:   
 `./psql-mass-rce.py --saved --command 'whoami'`   
 
-Full help:
+
+Installation:
 --------
-```
-psql-mass-rce v0.1
+`pip3 install -r requirements.txt`
 
-Usage: psql-mass-rce.py targets [--userfile USERFILE] [--passfile PASSFILE]
-               [--command COMMAND] [--port PORT] [--saved]
-
-Necessary arguments:
-  targets              Accepts any number of these: IP, network, or .gnmap file
-
-Optional arguments:
-  -h, --help           show this help message and exit
-  --userfile USERFILE  File with a list of users
-  --passfile PASSFILE  File with a list of passwords
-  --command COMMAND    Command to execute on a target machine
-  --port PORT          Port to connect
-  --saved              Work on targets from saved session file
-```
 
 Which PostgreSQL versions can give me RCE?
 --------
@@ -56,4 +42,22 @@ Definately yes.
 | 1. run nmap for port scanning<br/>2. run patator/hydra to bruteforce credentials<br/>3. run psql binary to connect and check version<br/>4. copy-paste payloads, or launch MSF `postgres_payload` manually at each host.     | ./psql-mass-rce.py 10.1.1.0/24 |
 
 
-Dependencies (just in case): `pip3 install argparse psycopg2 netaddr`
+Full help:
+--------
+```
+psql-mass-rce v0.1
+
+Usage: psql-mass-rce.py targets [--userfile USERFILE] [--passfile PASSFILE]
+               [--command COMMAND] [--port PORT] [--saved]
+
+Necessary arguments:
+  targets              Accepts any number of these: IP, network, or .gnmap file
+
+Optional arguments:
+  -h, --help           show this help message and exit
+  --userfile USERFILE  File with a list of users
+  --passfile PASSFILE  File with a list of passwords
+  --command COMMAND    Command to execute on a target machine
+  --port PORT          Port to connect
+  --saved              Work on targets from saved session file
+```
