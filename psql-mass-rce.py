@@ -190,7 +190,10 @@ def attack_victim(ip, port, userlist, passlist, command, session):
 # Parse CLI arguments
 def parse_args():
     parser = argparse.ArgumentParser(description='Scan network for postgreses, bruteforce passwords, pwn.')
-    parser.add_argument('targets', metavar='targets', type=str, nargs='*') # nargs='+' if targets is necessary
+    parser.add_argument('targets', metavar='targets', type=str, nargs='*',
+                        help='Accepts any number of these: IP, subnet, or .gnmap file') # nargs='+' if targets is necessary
+    parser.add_argument('-iL', dest='targets_file',
+                        default=None, help='Load IP[:port] targets from local file')
     parser.add_argument('--userfile', dest='userfile',
                         default=None, help='File with a list of users')
     parser.add_argument('--passfile', dest='passfile',
@@ -199,10 +202,8 @@ def parse_args():
                         default=None, help='Command to execute on a target machine')
     parser.add_argument('--port', dest='port',
                         default=None, help='Port to connect')
-    parser.add_argument('-iL', dest='il_targets_file',
-                        default=None, help='Load IP[:port] targets from local file')
     parser.add_argument('--saved', dest='saved', action='store_true',
-                        default=False, help='Load data from saved session file')
+                        default=False, help='Work on targets from saved session file')
 
     args = parser.parse_args()
 
@@ -240,8 +241,8 @@ def main():
             data = line.strip().split(':')
             attack_victim(data[0], data[1], [data[2]], [data[3]], command, session)
 
-    elif args.il_targets_file:
-        for line in open(args.il_targets_file):
+    elif args.targets_file:
+        for line in open(args.targets_file):
             data = line.strip().split(':')
             try:
                 _port = data[1]
@@ -259,4 +260,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
