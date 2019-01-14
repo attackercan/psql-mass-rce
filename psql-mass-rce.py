@@ -93,7 +93,12 @@ class Victim:
                 if "timeout expired" in str(e):
                     return {'status': 'fail', 'message': 'timeout'}
                 return {'status': 'fail', 'message': str(e)}
-
+            
+            # In case you face encoding issues, try changing default encoding to one that suits your needs.
+            # Encoding list reference: https://www.postgresql.org/docs/current/multibyte.html#CHARSET-TABLE
+            # Uncomment the following string:
+            # conn.set_client_encoding('WIN1251')
+            
             cur = conn.cursor()
             cur.execute(query)
 
